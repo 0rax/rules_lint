@@ -50,7 +50,7 @@ def _module(import_root, config):
         return import_root[len(config_dir) + 1:]
     return ""
 
-def buf_lint_action(ctx, buf, protoc, target, stderr, exit_code = None, args = [], module = ""):
+def buf_lint_action(ctx, buf, protoc, target, stderr, exit_code = None, args = [], module = "", error_format = ""):
     """Runs the buf lint tool as a Bazel action.
 
     Args:
@@ -64,12 +64,15 @@ def buf_lint_action(ctx, buf, protoc, target, stderr, exit_code = None, args = [
         args: additional command-line arguments passed to protoc
         module: path of the buf.yaml module the target belongs to, relative to the config.
             Required by v2 configs listing `modules`.
+        error_format: buf's `--error-format` for the findings, its default text format when empty
     """
     plugin_opt = {
         "input_config": "" if ctx.file._config == None else ctx.file._config.short_path,
     }
     if module:
         plugin_opt["module"] = module
+    if error_format:
+        plugin_opt["error_format"] = error_format
     config = json.encode(plugin_opt)
 
     deps = depset(
@@ -137,7 +140,8 @@ def _buf_lint_aspect_impl(target, ctx):
     # TODO(alex): there should be a reason to run the buf action again rather than just copy the files
     buf_lint_action(ctx, buf, protoc, target, outputs.human.out, outputs.human.exit_code, args = ctx.attr._args, module = module)
     raw_machine_report = ctx.actions.declare_file(OUTFILE_FORMAT.format(label = target.label.name, mnemonic = _MNEMONIC, suffix = "raw_machine_report"))
-    buf_lint_action(ctx, buf, protoc, target, raw_machine_report, outputs.machine.exit_code, args = ctx.attr._args, module = module)
+    # JSON carries each finding's rule and end position, which the text format drops.
+    buf_lint_action(ctx, buf, protoc, target, raw_machine_report, outputs.machine.exit_code, args = ctx.attr._args, module = module, error_format = "json")
     parse_to_sarif_action(
         ctx,
         _MNEMONIC,

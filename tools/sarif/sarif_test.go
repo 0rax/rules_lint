@@ -47,6 +47,8 @@ type sarifReport struct {
 					Region struct {
 						StartLine   int32 `json:"startLine"`
 						StartColumn int32 `json:"startColumn"`
+						EndLine     int32 `json:"endLine"`
+						EndColumn   int32 `json:"endColumn"`
 					} `json:"region"`
 				} `json:"physicalLocation"`
 			} `json:"locations"`
@@ -90,33 +92,61 @@ func TestSarif(t *testing.T) {
 	t.Run("processes buf output -> sarif correctly", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		sarifJsonString, _ := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", buf_output, "", "")
-		sarifJson, _ := toSarifJson(sarifJsonString)
+		sarifJsonString, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", buf_output, "", "")
+		g.Expect(err).ToNot(HaveOccurred())
+		sarifJson, err := toSarifJson(sarifJsonString)
+		g.Expect(err).ToNot(HaveOccurred())
 
 		g.Expect(len(sarifJson.Runs)).To(Equal(1))
 		g.Expect(sarifJson.Runs[0].Tool.Driver.Name).To(Equal("Buf"))
 		g.Expect(len(sarifJson.Runs[0].Results)).To(Equal(3))
-		g.Expect(sarifJson.Runs[0].Results[0].Message.Text).To(Equal(`Field name "userId" should be lower_snake_case, such as "user_id".`))
-		g.Expect(sarifJson.Runs[0].Results[1].Message.Text).To(Equal(`Service name "Http" should be suffixed with "Service".`))
-		g.Expect(sarifJson.Runs[0].Results[0].Locations[0].PhysicalLocation.ArtifactLocation.URI).To(Equal("src/file.proto"))
+
+		// buf logs come first and are skipped; the first finding carries protoc's --buf-plugin_out: prefix, the others do not
+		first := sarifJson.Runs[0].Results[0]
+		g.Expect(first.Level).To(Equal("error"))
+		g.Expect(first.Message.Text).To(Equal(`FIELD_LOWER_SNAKE_CASE: Field name "userId" should be lower_snake_case, such as "user_id".`))
+		g.Expect(first.Locations[0].PhysicalLocation.ArtifactLocation.URI).To(Equal("src/file.proto"))
+		region := first.Locations[0].PhysicalLocation.Region
+		g.Expect([]int32{region.StartLine, region.StartColumn, region.EndLine, region.EndColumn}).To(Equal([]int32{5, 3, 5, 9}))
+
+		second := sarifJson.Runs[0].Results[1]
+		g.Expect(second.Message.Text).To(Equal(`SERVICE_SUFFIX: Service name "Http" should be suffixed with "Service".`))
+		region = second.Locations[0].PhysicalLocation.Region
+		g.Expect([]int32{region.StartLine, region.StartColumn, region.EndLine, region.EndColumn}).To(Equal([]int32{12, 1, 14, 2}))
+
+		g.Expect(sarifJson.Runs[0].Results[2].Message.Text).To(HavePrefix("PACKAGE_DIRECTORY_MATCH: "))
 		g.Expect(sarifJson.Runs[0].Results[2].Locations[0].PhysicalLocation.ArtifactLocation.URI).To(Equal("src/other.proto"))
-		g.Expect(sarifJson.Runs[0].Results[0].Locations[0].PhysicalLocation.Region.StartLine).To(Equal(int32(5)))
-		g.Expect(sarifJson.Runs[0].Results[1].Locations[0].PhysicalLocation.Region.StartLine).To(Equal(int32(12)))
-		g.Expect(sarifJson.Runs[0].Results[0].Locations[0].PhysicalLocation.Region.StartColumn).To(Equal(int32(3)))
-		for _, result := range sarifJson.Runs[0].Results {
-			g.Expect(string(result.Level)).To(Equal("error"))
-		}
 	})
 
 	t.Run("maps buf paths from import paths to workspace paths", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		sarifJsonString, _ := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", buf_output, "src/", "proto/src/")
+		sarifJsonString, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", buf_output, "src/", "proto/src/")
+		g.Expect(err).ToNot(HaveOccurred())
 		sarifJson, _ := toSarifJson(sarifJsonString)
 
-		g.Expect(len(sarifJson.Runs[0].Results)).To(Equal(3))
 		g.Expect(sarifJson.Runs[0].Results[0].Locations[0].PhysicalLocation.ArtifactLocation.URI).To(Equal("proto/src/file.proto"))
 		g.Expect(sarifJson.Runs[0].Results[2].Locations[0].PhysicalLocation.ArtifactLocation.URI).To(Equal("proto/src/other.proto"))
+	})
+
+	t.Run("converts an empty buf report to a run without results", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		sarifJsonString, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", "", "", "")
+		g.Expect(err).ToNot(HaveOccurred())
+		sarifJson, err := toSarifJson(sarifJsonString)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(len(sarifJson.Runs)).To(Equal(1))
+		g.Expect(sarifJson.Runs[0].Tool.Driver.Name).To(Equal("Buf"))
+		g.Expect(sarifJson.Runs[0].Results).To(BeEmpty())
+	})
+
+	t.Run("rejects a malformed buf json finding", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		_, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", `{"path":`, "", "")
+		g.Expect(err).To(HaveOccurred())
 	})
 
 	t.Run("processes taplo output -> sarif correctly", func(t *testing.T) {

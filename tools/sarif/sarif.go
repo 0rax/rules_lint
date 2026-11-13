@@ -77,12 +77,7 @@ func ToSarifJsonString(label string, mnemonic string, report string, stripPathPr
 			`%-Z%r`,
 		}
 	case "AspectRulesLintBuf":
-		// protoc only prefixes the first line of the plugin's output, so each
-		// finding starts a new error whether or not it carries the prefix.
-		fm = []string{
-			`%E--buf-plugin_out: %f:%l:%c:%m`,
-			`%E%f:%l:%c:%m`,
-		}
+		return bufJsonToSarif(label, mnemonic, report, stripPathPrefix, addPathPrefix)
 	case "AspectRulesLintVale":
 		fm = []string{`%f:%l:%c:%m`}
 	case "AspectRulesLintCppCheck":
@@ -277,6 +272,64 @@ func rubocopJsonToSarif(label, mnemonic, report string) (sarifJsonString string,
 			if err = jw.Write(entry); err != nil {
 				return "", err
 			}
+		}
+	}
+
+	return sarifJsonString, nil
+}
+
+// protoc prefixes the first line of the buf plugin's output with the plugin's flag.
+const bufPluginOutPrefix = "--buf-plugin_out: "
+
+// bufJsonToSarif converts a buf lint report in buf's `json` error format, one finding per line, to SARIF.
+// Lines that are not JSON objects are buf logs and are skipped.
+// The finding's rule leads its message, as for RuboCop.
+func bufJsonToSarif(label, mnemonic, report, stripPathPrefix, addPathPrefix string) (sarifJsonString string, err error) {
+	var buf bytes.Buffer
+	var jw writer.Writer
+	jw, err = writer.NewSarif(&buf, writer.SarifOption{ToolName: mnemonicPrettyName(mnemonic)})
+	if err != nil {
+		return "", err
+	}
+
+	if bw, ok := jw.(writer.BufWriter); ok {
+		defer func() {
+			if fErr := bw.Flush(); fErr != nil {
+				log.Println(fErr)
+			}
+			sarifJsonString = buf.String()
+		}()
+	}
+
+	for _, line := range strings.Split(report, "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(line, bufPluginOutPrefix))
+		// buf logs, e.g. deprecation warnings, share the output with the findings.
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var annotation struct {
+			Path        string `json:"path"`
+			StartLine   int    `json:"start_line"`
+			StartColumn int    `json:"start_column"`
+			EndLine     int    `json:"end_line"`
+			EndColumn   int    `json:"end_column"`
+			Type        string `json:"type"`
+			Message     string `json:"message"`
+		}
+		if err = json.Unmarshal([]byte(line), &annotation); err != nil {
+			return "", fmt.Errorf("invalid buf JSON finding %q from target %s: %w", line, label, err)
+		}
+		entry := &errorformat.Entry{
+			Filename: addPathPrefix + strings.TrimPrefix(determineRelativePath(annotation.Path, label), stripPathPrefix),
+			Lnum:     annotation.StartLine,
+			Col:      annotation.StartColumn,
+			EndLnum:  annotation.EndLine,
+			EndCol:   annotation.EndColumn,
+			Type:     'E',
+			Text:     annotation.Type + ": " + annotation.Message,
+		}
+		if err = jw.Write(entry); err != nil {
+			return "", err
 		}
 	}
 

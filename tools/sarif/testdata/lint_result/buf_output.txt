@@ -1,3 +1,6 @@
---buf-plugin_out: src/file.proto:5:3:Field name "userId" should be lower_snake_case, such as "user_id".
-src/file.proto:12:1:Service name "Http" should be suffixed with "Service".
-src/other.proto:3:1:Files with package "foo.v1" must be within a directory "foo/v1" relative to root but were in directory "src".
+[33mWARN[0m	Category DEFAULT referenced in your buf.yaml is deprecated. It has been replaced by category STANDARD.
+
+	The concept of a default rule has been introduced.
+--buf-plugin_out: {"path":"src/file.proto","start_line":5,"start_column":3,"end_line":5,"end_column":9,"type":"FIELD_LOWER_SNAKE_CASE","message":"Field name \"userId\" should be lower_snake_case, such as \"user_id\"."}
+{"path":"src/file.proto","start_line":12,"start_column":1,"end_line":14,"end_column":2,"type":"SERVICE_SUFFIX","message":"Service name \"Http\" should be suffixed with \"Service\"."}
+{"path":"src/other.proto","start_line":3,"start_column":1,"end_line":3,"end_column":16,"type":"PACKAGE_DIRECTORY_MATCH","message":"Files with package \"foo.v1\" must be within a directory \"foo/v1\" relative to root but were in directory \"src\"."}
