@@ -34,7 +34,7 @@ func mnemonicPrettyName(mnemonic string) string {
 	return strings.Replace(mnemonic, "AspectRulesLint", "", 1)
 }
 
-func ToSarifJsonString(label string, mnemonic string, report string, stripPathPrefix string, addPathPrefix string) (sarifJsonString string, err error) {
+func ToSarifJsonString(label string, mnemonic string, report string, workspacePaths map[string]string) (sarifJsonString string, err error) {
 	if mnemonic == "AspectRulesLintGolangciLint" {
 		return normalizeGolangciSarif(report)
 	}
@@ -77,7 +77,7 @@ func ToSarifJsonString(label string, mnemonic string, report string, stripPathPr
 			`%-Z%r`,
 		}
 	case "AspectRulesLintBuf":
-		return bufJsonToSarif(label, mnemonic, report, stripPathPrefix, addPathPrefix)
+		return bufJsonToSarif(label, mnemonic, report, workspacePaths)
 	case "AspectRulesLintVale":
 		fm = []string{`%f:%l:%c:%m`}
 	case "AspectRulesLintCppCheck":
@@ -197,7 +197,7 @@ func ToSarifJsonString(label string, mnemonic string, report string, stripPathPr
 	for s.Scan() {
 		entry := s.Entry()
 		if entry.Filename != "" && entry.Text != "" {
-			entry.Filename = addPathPrefix + strings.TrimPrefix(determineRelativePath(entry.Filename, label), stripPathPrefix)
+			entry.Filename = workspacePath(entry.Filename, label, workspacePaths)
 			if err := jsonWriter.Write(entry); err != nil {
 				return "", err
 			}
@@ -284,7 +284,7 @@ const bufPluginOutPrefix = "--buf-plugin_out: "
 // bufJsonToSarif converts a buf lint report in buf's `json` error format, one finding per line, to SARIF.
 // Lines that are not JSON objects are buf logs and are skipped.
 // The finding's rule leads its message, as for RuboCop.
-func bufJsonToSarif(label, mnemonic, report, stripPathPrefix, addPathPrefix string) (sarifJsonString string, err error) {
+func bufJsonToSarif(label, mnemonic, report string, workspacePaths map[string]string) (sarifJsonString string, err error) {
 	var buf bytes.Buffer
 	var jw writer.Writer
 	jw, err = writer.NewSarif(&buf, writer.SarifOption{ToolName: mnemonicPrettyName(mnemonic)})
@@ -320,7 +320,7 @@ func bufJsonToSarif(label, mnemonic, report, stripPathPrefix, addPathPrefix stri
 			return "", fmt.Errorf("invalid buf JSON finding %q from target %s: %w", line, label, err)
 		}
 		entry := &errorformat.Entry{
-			Filename: addPathPrefix + strings.TrimPrefix(determineRelativePath(annotation.Path, label), stripPathPrefix),
+			Filename: workspacePath(annotation.Path, label, workspacePaths),
 			Lnum:     annotation.StartLine,
 			Col:      annotation.StartColumn,
 			EndLnum:  annotation.EndLine,
@@ -334,6 +334,16 @@ func bufJsonToSarif(label, mnemonic, report, stripPathPrefix, addPathPrefix stri
 	}
 
 	return sarifJsonString, nil
+}
+
+// workspacePath is the workspace-relative path of a file the linter reported as path:
+// its entry in workspacePaths, else the path made relative by determineRelativePath.
+func workspacePath(path string, label string, workspacePaths map[string]string) string {
+	path = determineRelativePath(path, label)
+	if p, ok := workspacePaths[path]; ok {
+		return p
+	}
+	return path
 }
 
 // Matches an absolute path once separators have been normalised to slashes:

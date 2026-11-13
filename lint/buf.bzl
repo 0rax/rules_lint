@@ -39,6 +39,17 @@ def _import_root(ctx):
         return prefix.strip("/")
     return "/".join([p for p in [ctx.label.package, prefix.strip("/")] if p])
 
+def _workspace_paths(target, ctx):
+    """Workspace path of each linted file, keyed by the import path buf reports it by."""
+    root = target[ProtoInfo].proto_source_root
+
+    # direct_sources are srcs, or with a strip_import_prefix or import_prefix their _virtual_imports
+    # copies, which proto_library creates in srcs order. A path left unmapped is reported as is.
+    return {
+        (f.path[len(root) + 1:] if f.path.startswith(root + "/") else f.path): src.short_path
+        for f, src in zip(target[ProtoInfo].direct_sources, getattr(ctx.rule.files, "srcs", []))
+    }
+
 def _module(import_root, config):
     """Path of the buf.yaml module rooted at `import_root`, relative to the config's directory."""
     config_dir = config.short_path.rpartition("/")[0]
@@ -132,10 +143,7 @@ def _buf_lint_aspect_impl(target, ctx):
     protoc = ctx.toolchains["@rules_proto//proto:toolchain_type"].proto.proto_compiler.executable
     outputs, info = output_files(_MNEMONIC, target, ctx)
 
-    # buf reports paths relative to the import root, possibly behind an import_prefix.
-    import_root = _import_root(ctx)
-    import_prefix = getattr(ctx.rule.attr, "import_prefix", "").strip("/")
-    module = _module(import_root, ctx.file._config) if ctx.attr._infer_module else ""
+    module = _module(_import_root(ctx), ctx.file._config) if ctx.attr._infer_module else ""
 
     # TODO(alex): there should be a reason to run the buf action again rather than just copy the files
     buf_lint_action(ctx, buf, protoc, target, outputs.human.out, outputs.human.exit_code, args = ctx.attr._args, module = module)
@@ -147,8 +155,7 @@ def _buf_lint_aspect_impl(target, ctx):
         _MNEMONIC,
         raw_machine_report,
         outputs.machine.out,
-        strip_path_prefix = import_prefix + "/" if import_prefix else "",
-        add_path_prefix = import_root + "/" if import_root else "",
+        workspace_paths = _workspace_paths(target, ctx),
     )
     return [info]
 

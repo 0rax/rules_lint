@@ -72,7 +72,7 @@ func TestSarif(t *testing.T) {
 			io.Copy(stdOut, stdOutReader)
 		}()
 
-		sarifJsonString, _ := ToSarifJsonString("//speller/announce:announce", "AspectRulesLintClangTidy", clang_tidy_output, "", "")
+		sarifJsonString, _ := ToSarifJsonString("//speller/announce:announce", "AspectRulesLintClangTidy", clang_tidy_output, nil)
 		sarifJson, _ := toSarifJson(sarifJsonString)
 
 		stdOutWriter.Close()
@@ -92,7 +92,7 @@ func TestSarif(t *testing.T) {
 	t.Run("processes buf output -> sarif correctly", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		sarifJsonString, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", buf_output, "", "")
+		sarifJsonString, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", buf_output, nil)
 		g.Expect(err).ToNot(HaveOccurred())
 		sarifJson, err := toSarifJson(sarifJsonString)
 		g.Expect(err).ToNot(HaveOccurred())
@@ -121,7 +121,7 @@ func TestSarif(t *testing.T) {
 	t.Run("maps buf paths from import paths to workspace paths", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		sarifJsonString, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", buf_output, "src/", "proto/src/")
+		sarifJsonString, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", buf_output, map[string]string{"src/file.proto": "proto/src/file.proto", "src/other.proto": "proto/src/other.proto"})
 		g.Expect(err).ToNot(HaveOccurred())
 		sarifJson, _ := toSarifJson(sarifJsonString)
 
@@ -132,7 +132,7 @@ func TestSarif(t *testing.T) {
 	t.Run("converts an empty buf report to a run without results", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		sarifJsonString, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", "", "", "")
+		sarifJsonString, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", "", nil)
 		g.Expect(err).ToNot(HaveOccurred())
 		sarifJson, err := toSarifJson(sarifJsonString)
 		g.Expect(err).ToNot(HaveOccurred())
@@ -145,14 +145,14 @@ func TestSarif(t *testing.T) {
 	t.Run("rejects a malformed buf json finding", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		_, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", `{"path":`, "", "")
+		_, err := ToSarifJsonString("//src:foo_proto", "AspectRulesLintBuf", `{"path":`, nil)
 		g.Expect(err).To(HaveOccurred())
 	})
 
 	t.Run("processes taplo output -> sarif correctly", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		sarifJsonString, _ := ToSarifJsonString("//src:toml", "AspectRulesLintTaplo", taplo_output, "", "")
+		sarifJsonString, _ := ToSarifJsonString("//src:toml", "AspectRulesLintTaplo", taplo_output, nil)
 		sarifJson, _ := toSarifJson(sarifJsonString)
 
 		g.Expect(len(sarifJson.Runs)).To(Equal(1))
@@ -172,7 +172,7 @@ func TestSarif(t *testing.T) {
 	t.Run("processes pydoclint output -> sarif correctly", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		sarifJsonString, _ := ToSarifJsonString("//src:missing_doc_arg", "AspectRulesLintPydoclint", pydoclint_output, "", "")
+		sarifJsonString, _ := ToSarifJsonString("//src:missing_doc_arg", "AspectRulesLintPydoclint", pydoclint_output, nil)
 		sarifJson, _ := toSarifJson(sarifJsonString)
 
 		g.Expect(len(sarifJson.Runs)).To(Equal(1))
@@ -186,7 +186,7 @@ func TestSarif(t *testing.T) {
 	t.Run("processes cppcheck text output -> sarif correctly", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		sarifJsonString, err := ToSarifJsonString("//src:hello_cc", "AspectRulesLintCppCheck", cppcheck_output, "", "")
+		sarifJsonString, err := ToSarifJsonString("//src:hello_cc", "AspectRulesLintCppCheck", cppcheck_output, nil)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		sarifJson, err := toSarifJson(sarifJsonString)
@@ -240,7 +240,7 @@ func TestSarif(t *testing.T) {
 	t.Run("processes ktlint output -> sarif correctly", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		sarifJsonString, _ := ToSarifJsonString("//src:hello_kt", "AspectRulesLintKTLint", ktlint_output, "", "")
+		sarifJsonString, _ := ToSarifJsonString("//src:hello_kt", "AspectRulesLintKTLint", ktlint_output, nil)
 		sarifJson, _ := toSarifJson(sarifJsonString)
 
 		g.Expect(len(sarifJson.Runs)).To(Equal(1))
@@ -263,7 +263,7 @@ func TestSarif(t *testing.T) {
 +import scala.util.Try
 `
 
-		sarifJsonString, _ := ToSarifJsonString("//src:semantic_test", "AspectRulesLintScalafix", diff, "", "")
+		sarifJsonString, _ := ToSarifJsonString("//src:semantic_test", "AspectRulesLintScalafix", diff, nil)
 		sarifJson, _ := toSarifJson(sarifJsonString)
 
 		g.Expect(len(sarifJson.Runs)).To(Equal(1))
