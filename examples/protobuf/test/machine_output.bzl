@@ -2,8 +2,10 @@
 
 # buildifier: disable=bzl-visibility
 load("@rules_lint//lint/private:machine_report_testing.bzl", "machine_report_rule")
-load("//tools/lint:linters.bzl", "buf", "buf_modules")
+load("//tools/lint:linters.bzl", "buf", "buf_modules", "buf_plugins")
 
 machine_buf_report = machine_report_rule(buf)
 
 machine_buf_modules_report = machine_report_rule(buf_modules)
+
+machine_buf_plugins_report = machine_report_rule(buf_plugins)

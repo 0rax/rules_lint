@@ -1,0 +1,10 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    # Only the plugin's rule, so any finding comes from the plugin.
+    - MESSAGE_NO_LEGACY_PREFIX
+plugins:
+  # Resolved by name from PATH: the aspect adds the plugins it is given.
+  - plugin: buf-plugin-message-no-legacy-prefix

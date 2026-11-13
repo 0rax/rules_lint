@@ -32,6 +32,12 @@ See `src/` for example protobuf files:
 - `file.proto` - A protobuf file with a service definition and intentional violations
 - `unused.proto` - An unused protobuf file that demonstrates import checking
 
+See `plugins/` for a `buf.yaml` using a local [check plugin](https://buf.build/docs/cli/buf-plugins/overview/):
+
+- `buf-plugin-message-no-legacy-prefix/` - The plugin, a `go_binary` named as `buf.yaml` lists it
+- `proto/legacy/v1/legacy.proto` - A protobuf file the plugin reports
+- The `buf_plugins` aspect in `tools/lint/linters.bzl` passes the plugin to buf through `plugins`
+
 ## Ignoring Lint Rules
 
 You can ignore specific lint rules inline using comments:

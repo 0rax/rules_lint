@@ -16,3 +16,12 @@ buf_modules = lint_buf_aspect(
 )
 
 buf_modules_test = lint_test(aspect = buf_modules)
+
+# an example of setting up a buf aspect for a buf.yaml listing local check `plugins`
+buf_plugins = lint_buf_aspect(
+    config = Label("@//plugins:buf.yaml"),
+    infer_module = True,
+    plugins = [Label("@//plugins/buf-plugin-message-no-legacy-prefix")],
+)
+
+buf_plugins_test = lint_test(aspect = buf_plugins)

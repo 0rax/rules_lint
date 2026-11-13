@@ -21,6 +21,17 @@ buf = lint_buf_aspect(
     infer_module = True,
 )
 ```
+
+For a `buf.yaml` listing [check plugins](https://buf.build/docs/cli/buf-plugins/overview/) under `plugins`, pass their executable targets in `plugins`.
+buf runs each plugin by name, so the executable's file name must match its name in `buf.yaml`, e.g. a `go_binary` named after it.
+Only local plugins are supported, from buf v1.54.0: `protoc-gen-buf-lint` does not run remote plugins (`buf.build/<owner>/<plugin>`).
+
+```
+buf = lint_buf_aspect(
+    config = Label("//:buf.yaml"),
+    plugins = [Label("//tools/buf:buf-plugin-message-suffix")],
+)
+```
 """
 
 load("@rules_proto//proto:defs.bzl", "ProtoInfo")
@@ -61,7 +72,7 @@ def _module(import_root, config):
         return import_root[len(config_dir) + 1:]
     return ""
 
-def buf_lint_action(ctx, buf, protoc, target, stderr, exit_code = None, args = [], module = "", error_format = ""):
+def buf_lint_action(ctx, buf, protoc, target, stderr, exit_code = None, args = [], module = "", error_format = "", plugins = []):
     """Runs the buf lint tool as a Bazel action.
 
     Args:
@@ -76,6 +87,7 @@ def buf_lint_action(ctx, buf, protoc, target, stderr, exit_code = None, args = [
         module: path of the buf.yaml module the target belongs to, relative to the config.
             Required by v2 configs listing `modules`.
         error_format: buf's `--error-format` for the findings, its default text format when empty
+        plugins: FilesToRunProvider of each check plugin the config lists under `plugins`
     """
     plugin_opt = {
         "input_config": "" if ctx.file._config == None else ctx.file._config.short_path,
@@ -119,12 +131,20 @@ def buf_lint_action(ctx, buf, protoc, target, stderr, exit_code = None, args = [
         # Create empty file on success, as Bazel expects one
         command = "{protoc} $@ && touch {stderr}"
 
+    if plugins:
+        # buf runs the config's plugins by name from PATH. Go's exec.LookPath ignores relative
+        # PATH entries, so each plugin directory is made absolute.
+        command = "export PATH={path}:$PATH; ".format(
+            path = ":".join(["$PWD/" + p.executable.dirname for p in plugins]),
+        ) + command
+
     ctx.actions.run_shell(
         inputs = depset([
             ctx.file._config,
             protoc,
             buf,
         ], transitive = [deps]),
+        tools = plugins,
         outputs = outputs,
         command = command.format(
             protoc = protoc.path,
@@ -144,12 +164,13 @@ def _buf_lint_aspect_impl(target, ctx):
     outputs, info = output_files(_MNEMONIC, target, ctx)
 
     module = _module(_import_root(ctx), ctx.file._config) if ctx.attr._infer_module else ""
+    plugins = [p[DefaultInfo].files_to_run for p in ctx.attr._plugins]
 
     # TODO(alex): there should be a reason to run the buf action again rather than just copy the files
-    buf_lint_action(ctx, buf, protoc, target, outputs.human.out, outputs.human.exit_code, args = ctx.attr._args, module = module)
+    buf_lint_action(ctx, buf, protoc, target, outputs.human.out, outputs.human.exit_code, args = ctx.attr._args, module = module, plugins = plugins)
     raw_machine_report = ctx.actions.declare_file(OUTFILE_FORMAT.format(label = target.label.name, mnemonic = _MNEMONIC, suffix = "raw_machine_report"))
     # JSON carries each finding's rule and end position, which the text format drops.
-    buf_lint_action(ctx, buf, protoc, target, raw_machine_report, outputs.machine.exit_code, args = ctx.attr._args, module = module, error_format = "json")
+    buf_lint_action(ctx, buf, protoc, target, raw_machine_report, outputs.machine.exit_code, args = ctx.attr._args, module = module, error_format = "json", plugins = plugins)
     parse_to_sarif_action(
         ctx,
         _MNEMONIC,
@@ -159,7 +180,7 @@ def _buf_lint_aspect_impl(target, ctx):
     )
     return [info]
 
-def lint_buf_aspect(config, toolchain = "@rules_buf//tools/protoc-gen-buf-lint:toolchain_type", rule_kinds = ["proto_library"], args = [], infer_module = False):
+def lint_buf_aspect(config, toolchain = "@rules_buf//tools/protoc-gen-buf-lint:toolchain_type", rule_kinds = ["proto_library"], args = [], infer_module = False, plugins = []):
     """A factory function to create a linter aspect.
 
     Args:
@@ -169,6 +190,7 @@ def lint_buf_aspect(config, toolchain = "@rules_buf//tools/protoc-gen-buf-lint:t
         args: additional options to pass to the underlying protoc invocation
         infer_module: lint each target as part of the buf.yaml module rooted at its import root.
             Required for a v2 buf.yaml listing `modules`, leave unset otherwise.
+        plugins: executable targets of the check plugins the config lists under `plugins`, see above
     """
     return aspect(
         implementation = _buf_lint_aspect_impl,
@@ -193,6 +215,10 @@ def lint_buf_aspect(config, toolchain = "@rules_buf//tools/protoc-gen-buf-lint:t
             ),
             "_infer_module": attr.bool(
                 default = infer_module,
+            ),
+            "_plugins": attr.label_list(
+                default = plugins,
+                cfg = "exec",
             ),
         },
         toolchains = [
